@@ -6,13 +6,20 @@ This project contains an Apache Airflow setup using Docker Compose to run your D
 
 ```
 .
-├── docker-compose.yml    # Docker Compose configuration
-├── .env                 # Environment variables
-├── dags/               # Directory for DAG files
-│   └── jobs_dag.py     # Your DAG file
-├── logs/               # Airflow logs
-├── plugins/            # Custom plugins
-└── config/             # Configuration files
+├── docker-compose.yml         # Docker Compose configuration
+├── .env                      # Environment variables
+├── dags/                     # Directory for DAG files
+│   ├── jobs_dag.py          # Dynamic DAG loader
+│   └── tutorial_example.py  # Example DAG (commented out)
+├── dag_sources/              # Source DAG definitions
+│   ├── source_1/
+│   │   └── source_1.py      # DAG 1 definition
+│   └── source_2/
+│       ├── source_2.py      # DAG 2 definition
+│       └── source_3.py      # DAG 3 definition
+├── logs/                     # Airflow logs
+├── plugins/                  # Custom plugins
+└── config/                   # Configuration files
 ```
 
 ## Getting Started
@@ -67,19 +74,41 @@ docker-compose logs -f
 docker-compose ps
 ```
 
+## DAG Architecture
+
+### Dynamic DAG Loading
+
+The `dags/jobs_dag.py` file uses Airflow's `DagBag` to dynamically load DAGs from the `dag_sources/` directory structure. This approach allows for:
+- Modular DAG organization
+- Easy addition of new DAGs
+- Separation of concerns between DAG loading and DAG definition
+
 ### Your DAG Details
 
-Your `jobs_dag.py` creates three separate DAGs:
-- `dag_1`: Processes `table_name_1`
-- `dag_2`: Processes `table_name_2`
-- `dag_3`: Processes `table_name_3`
+Three DAGs are automatically loaded from the source directories:
 
-Each DAG has three tasks:
-1. `print_info`: Prints information about the DAG and table
-2. `insert_new_row`: Dummy task simulating row insertion
-3. `query_the_table`: Dummy task simulating table query
+- **`dag_1`**: Processes `table_1` in `db_1` database
+- **`dag_2`**: Processes `table_2` in `db_2` database  
+- **`dag_3`**: Processes `table_3` in `db_3` database
 
-Tasks run in sequence: print_info → insert_new_row → query_the_table
+### DAG Structure
+
+Each DAG follows the same pattern with three sequential tasks:
+
+1. **`start_processing_log`**: Python task that logs the start of processing
+   - Prints: "'{dag_id}' has started processing tables in the '{database}' database."
+2. **`insert_new_row`**: Dummy task simulating row insertion
+3. **`query_the_table`**: Dummy task simulating table query
+
+**Task Flow**: `start_processing_log` → `insert_new_row` → `query_the_table`
+
+### DAG Configuration
+
+Each DAG uses a configuration dictionary with:
+- **Schedule**: Manual trigger only (`schedule_interval=None`)
+- **Start Date**: January 1, 2023
+- **Catchup**: Disabled
+- **Database and Table**: Specific to each DAG
 
 ### Troubleshooting
 
@@ -101,7 +130,3 @@ If you encounter issues:
    docker-compose logs airflow-scheduler
    ```
 
-4. **Ensure proper permissions:**
-   ```bash
-   sudo chown -R $USER:$USER logs dags plugins
-   ```

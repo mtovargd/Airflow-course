@@ -1,89 +1,68 @@
 from datetime import datetime
 from airflow import DAG
-from airflow.operators.dummy import DummyOperator
+from airflow.operators.empty import EmptyOperator
 from airflow.operators.python import PythonOperator, BranchPythonOperator
+from airflow.operators.bash import BashOperator
+from airflow.utils.trigger_rule import TriggerRule
 
 # --- Callable Functions ---
-# These functions will be used by the tasks in our DAGs.
+# These functions are called by our Python-based operators.
 
-def log_processing_start(dag_id, database):
-    """Prints a log message indicating the start of the process."""
-    print(f"'{dag_id}' has started processing tables in the '{database}' database.")
+def log_processing_start():
+    """Prints a generic log message."""
+    print("Starting the data processing pipeline.")
 
 def check_table_exist():
     """
-    A dummy branching function. As required by the exercise, it always
-    chooses the 'insert_new_row' path.
-    
-    In a real DAG, this function would connect to a DB to check for a table.
-    It MUST return the task_id of the next task(s) to run.
+    A dummy branching function. It always chooses the 'insert_row' path.
+    It MUST return the task_id of the next task to run.
     """
-    return 'insert_new_row'
+    return 'insert_row'
 
 
-# --- DAG Configuration ---
-# A dictionary defining the parameters for each DAG we want to create.
-# We are using the 'dag_1', 'table_1' naming you requested.
-config = {
-    'dag_1': {
-        'schedule_interval': None,
-        'start_date': datetime(2023, 1, 1),
-        'table_name': 'table_1',
-        'database': 'db_1'
-    },
-    'dag_2': {
-        'schedule_interval': None,
-        'start_date': datetime(2024, 1, 1),
-        'table_name': 'table_2',
-        'database': 'db_2'
-    },
-    'dag_3': {
-        'schedule_interval': None,
-        'start_date': datetime(2025, 1, 1),
-        'table_name': 'table_3',
-        'database': 'db_3'
-    }
-}
+# --- DAG Definition ---
+# All the logic for our single pipeline is defined here.
+with DAG(
+    dag_id='dag_1',
+    start_date=datetime(2023, 1, 1),
+    schedule_interval=None,
+    catchup=False
+) as dag:
 
+    # Task 1: A PythonOperator to log the start of the process.
+    print_process_start = PythonOperator(
+        task_id='print_process_start',
+        python_callable=log_processing_start
+    )
 
-# --- Dynamic DAG Generation Loop ---
-# This loop iterates through the config dictionary and creates a DAG for each entry.
+    # Task 2: A BashOperator to execute the 'whoami' shell command.
+    get_current_user = BashOperator(
+        task_id='get_current_user',
+        bash_command='echo "Running as user: $(whoami)"'
+    )
 
-for dag_id, dag_params in config.items():
-    with DAG( 
-        dag_id=dag_id,
-        schedule_interval=dag_params['schedule_interval'],
-        start_date=dag_params['start_date'],
-        catchup=False,
-        tags=["dynamic_branching"]
-    ) as dag:
-        
-        start_processing = PythonOperator(
-            task_id='start_processing_log',
-            python_callable=log_processing_start,
-            op_kwargs={'dag_id': dag_id, 'database': dag_params['database']}
-        )
+    # Task 3: The Branching task to decide which path to take.
+    check_table_exists = BranchPythonOperator(
+        task_id='check_table_exists',
+        python_callable=check_table_exist
+    )
 
-        # The Branching Task that decides which path to take.
-        check_if_table_exists = BranchPythonOperator(
-            task_id='check_if_table_exists',
-            python_callable=check_table_exist
-        )
+    # Task 4a: The "False" branch (if the table doesn't exist).
+    create_table = EmptyOperator(task_id='create_table')
 
-        # The "False" branch task (if the table doesn't exist).
-        create_the_table = DummyOperator(task_id='create_the_table')
+    # Task 4b: The "True" branch (if the table exists).
+    insert_row = EmptyOperator(task_id='insert_row')
 
-        # The "True" branch task (if the table already exists).
-        insert_new_row = DummyOperator(task_id='insert_new_row')
+    # Task 5: The final task that merges the branches.
+    # We add the trigger_rule here to fix the skipping issue.
+    query_table = EmptyOperator(
+        task_id='query_table',
+        # This rule allows the task to run if its parents were skipped.
+        trigger_rule=TriggerRule.NONE_FAILED
+    )
 
-        # The downstream task that should run after either branch.
-        # This is the task that will be skipped.
-        query_the_table = DummyOperator(task_id='query_the_table')
-
-        # --- Task Dependencies ---
-        start_processing >> check_if_table_exists
-        check_if_table_exists >> [create_the_table, insert_new_row]
-        [create_the_table, insert_new_row] >> query_the_table
-
-    # This crucial line makes each dynamically generated DAG visible to Airflow.
-    globals()[dag_id] = dag
+    # --- Task Dependencies ---
+    # This defines the execution order and structure of the DAG.
+    print_process_start >> get_current_user >> check_table_exists
+    check_table_exists >> [create_table, insert_row]
+    [create_table, insert_row] >> query_table

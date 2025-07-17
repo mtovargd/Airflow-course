@@ -9,8 +9,7 @@ This project contains an Apache Airflow setup using Docker Compose to run your D
 ├── docker-compose.yml         # Docker Compose configuration
 ├── .env                      # Environment variables
 ├── dags/                     # Directory for DAG files
-│   ├── jobs_dag.py          # Dynamic DAG generator with branching logic
-│   └── tutorial_example.py  # Example DAG (commented out)
+│   └── jobs_dag.py          # Single DAG with branching logic and mixed operators
 ├── logs/                     # Airflow logs
 ├── plugins/                  # Custom plugins
 └── config/                   # Configuration files
@@ -42,9 +41,9 @@ This project contains an Apache Airflow setup using Docker Compose to run your D
      - Username: `admin`
      - Password: `admin`
 
-4. **View your DAGs:**
-   - Once logged in, you should see your three DAGs: `dag_1`, `dag_2`, and `dag_3`
-   - Click on any DAG to view its structure and run it
+4. **View your DAG:**
+   - Once logged in, you should see your single DAG: `dag_1`
+   - Click on the DAG to view its structure and run it
 
 ### Managing the Setup
 
@@ -70,74 +69,70 @@ docker-compose ps
 
 ## DAG Architecture
 
-### Dynamic DAG Generation
+### Single DAG Implementation
 
-The `dags/jobs_dag.py` file uses a configuration-driven approach to dynamically generate multiple DAGs from a single Python file. This approach provides:
-- Centralized DAG configuration
-- Easy scaling to multiple DAGs
-- Consistent branching logic across all DAGs
-- Reduced code duplication
+The `dags/jobs_dag.py` file contains a single DAG (`dag_1`) that demonstrates various Airflow concepts including:
+- Mixed operator types (Python, Bash, Empty)
+- Conditional branching logic
+- Proper trigger rules to handle skipped tasks
+- Sequential and parallel task execution
 
-### Your DAG Details
+### DAG Details
 
-Three DAGs are automatically generated from the configuration dictionary:
-
-- **`dag_1`**: Processes `table_1` in `db_1` database (Start: 2023-01-01)
-- **`dag_2`**: Processes `table_2` in `db_2` database (Start: 2024-01-01)
-- **`dag_3`**: Processes `table_3` in `db_3` database (Start: 2025-01-01)
+The single DAG `dag_1` includes:
+- **Start Date**: 2023-01-01
+- **Schedule**: Manual trigger only (`schedule_interval=None`)
+- **Catchup**: Disabled
+- **Mixed Operators**: PythonOperator, BashOperator, EmptyOperator, BranchPythonOperator
 
 ### DAG Structure with Branching Logic
 
-Each DAG follows the same pattern with **conditional branching**:
+The DAG follows this execution pattern:
 
-1. **`start_processing_log`**: Python task that logs the start of processing
-   - Prints: "'{dag_id}' has started processing tables in the '{database}' database."
+1. **`print_process_start`**: PythonOperator that logs the start of processing
+   - Prints: "Starting the data processing pipeline."
    
-2. **`check_if_table_exists`**: BranchPythonOperator that determines the next path
-   - Currently always returns 'insert_new_row' (simulating table exists)
+2. **`get_current_user`**: BashOperator that executes a shell command
+   - Runs: `echo "Running as user: $(whoami)"`
+   
+3. **`check_table_exists`**: BranchPythonOperator that determines the next path
+   - Currently always returns 'insert_row' (simulating table exists)
    - In production, this would check if the table exists in the database
    
-3. **Branching paths**:
-   - **`create_the_table`**: Dummy task (runs if table doesn't exist)
-   - **`insert_new_row`**: Dummy task (runs if table exists)
+4. **Branching paths**:
+   - **`create_table`**: EmptyOperator (runs if table doesn't exist)
+   - **`insert_row`**: EmptyOperator (runs if table exists)
    
-4. **`query_the_table`**: Final dummy task that runs after either branch
+5. **`query_table`**: Final EmptyOperator that runs after either branch
+   - Uses `TriggerRule.NONE_FAILED` to run even when upstream tasks are skipped
 
 ### Task Flow Diagram
 
 ```
-start_processing_log
+print_process_start
         │
         ▼
-check_if_table_exists
+get_current_user
         │
-        ├─── create_the_table ───┐
-        │                        │
-        └─── insert_new_row ─────┤
-                                 │
-                                 ▼
-                         query_the_table
+        ▼
+check_table_exists
+        │
+        ├─── create_table ───┐
+        │                    │
+        └─── insert_row ─────┤
+                             │
+                             ▼
+                      query_table
+                   (NONE_FAILED)
 ```
-
-### DAG Configuration
-
-Each DAG uses a configuration dictionary with:
-- **Schedule**: Manual trigger only (`schedule_interval=None`)
-- **Start Date**: Different years (2023, 2024, 2025)
-- **Catchup**: Disabled
-- **Tags**: `["dynamic_branching"]`
-- **Database and Table**: Specific to each DAG
 
 ### Key Features
 
+- **Mixed Operators**: Demonstrates PythonOperator, BashOperator, and EmptyOperator usage
 - **Branching Logic**: Uses `BranchPythonOperator` to conditionally execute tasks
-- **Dynamic Generation**: Single configuration change creates/modifies all DAGs
-- **Proper Task Dependencies**: Handles parallel branches that converge to a final task
-- **Global Registration**: Each generated DAG is registered in the global namespace
-
-### Additional Files
-
-- **`tutorial_example.py`**: Contains a commented-out weekday branching example DAG for reference
+- **Trigger Rules**: Implements `TriggerRule.NONE_FAILED` to handle skipped tasks properly
+- **Sequential and Parallel Flow**: Shows both linear task progression and parallel branching
+- **Shell Integration**: Includes system command execution with BashOperator
 
 ## Troubleshooting
 

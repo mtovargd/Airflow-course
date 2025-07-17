@@ -9,14 +9,8 @@ This project contains an Apache Airflow setup using Docker Compose to run your D
 ├── docker-compose.yml         # Docker Compose configuration
 ├── .env                      # Environment variables
 ├── dags/                     # Directory for DAG files
-│   ├── jobs_dag.py          # Dynamic DAG loader
+│   ├── jobs_dag.py          # Dynamic DAG generator with branching logic
 │   └── tutorial_example.py  # Example DAG (commented out)
-├── dag_sources/              # Source DAG definitions
-│   ├── source_1/
-│   │   └── source_1.py      # DAG 1 definition
-│   └── source_2/
-│       ├── source_2.py      # DAG 2 definition
-│       └── source_3.py      # DAG 3 definition
 ├── logs/                     # Airflow logs
 ├── plugins/                  # Custom plugins
 └── config/                   # Configuration files
@@ -76,41 +70,76 @@ docker-compose ps
 
 ## DAG Architecture
 
-### Dynamic DAG Loading
+### Dynamic DAG Generation
 
-The `dags/jobs_dag.py` file uses Airflow's `DagBag` to dynamically load DAGs from the `dag_sources/` directory structure. This approach allows for:
-- Modular DAG organization
-- Easy addition of new DAGs
-- Separation of concerns between DAG loading and DAG definition
+The `dags/jobs_dag.py` file uses a configuration-driven approach to dynamically generate multiple DAGs from a single Python file. This approach provides:
+- Centralized DAG configuration
+- Easy scaling to multiple DAGs
+- Consistent branching logic across all DAGs
+- Reduced code duplication
 
 ### Your DAG Details
 
-Three DAGs are automatically loaded from the source directories:
+Three DAGs are automatically generated from the configuration dictionary:
 
-- **`dag_1`**: Processes `table_1` in `db_1` database
-- **`dag_2`**: Processes `table_2` in `db_2` database  
-- **`dag_3`**: Processes `table_3` in `db_3` database
+- **`dag_1`**: Processes `table_1` in `db_1` database (Start: 2023-01-01)
+- **`dag_2`**: Processes `table_2` in `db_2` database (Start: 2024-01-01)
+- **`dag_3`**: Processes `table_3` in `db_3` database (Start: 2025-01-01)
 
-### DAG Structure
+### DAG Structure with Branching Logic
 
-Each DAG follows the same pattern with three sequential tasks:
+Each DAG follows the same pattern with **conditional branching**:
 
 1. **`start_processing_log`**: Python task that logs the start of processing
    - Prints: "'{dag_id}' has started processing tables in the '{database}' database."
-2. **`insert_new_row`**: Dummy task simulating row insertion
-3. **`query_the_table`**: Dummy task simulating table query
+   
+2. **`check_if_table_exists`**: BranchPythonOperator that determines the next path
+   - Currently always returns 'insert_new_row' (simulating table exists)
+   - In production, this would check if the table exists in the database
+   
+3. **Branching paths**:
+   - **`create_the_table`**: Dummy task (runs if table doesn't exist)
+   - **`insert_new_row`**: Dummy task (runs if table exists)
+   
+4. **`query_the_table`**: Final dummy task that runs after either branch
 
-**Task Flow**: `start_processing_log` → `insert_new_row` → `query_the_table`
+### Task Flow Diagram
+
+```
+start_processing_log
+        │
+        ▼
+check_if_table_exists
+        │
+        ├─── create_the_table ───┐
+        │                        │
+        └─── insert_new_row ─────┤
+                                 │
+                                 ▼
+                         query_the_table
+```
 
 ### DAG Configuration
 
 Each DAG uses a configuration dictionary with:
 - **Schedule**: Manual trigger only (`schedule_interval=None`)
-- **Start Date**: January 1, 2023
+- **Start Date**: Different years (2023, 2024, 2025)
 - **Catchup**: Disabled
+- **Tags**: `["dynamic_branching"]`
 - **Database and Table**: Specific to each DAG
 
-### Troubleshooting
+### Key Features
+
+- **Branching Logic**: Uses `BranchPythonOperator` to conditionally execute tasks
+- **Dynamic Generation**: Single configuration change creates/modifies all DAGs
+- **Proper Task Dependencies**: Handles parallel branches that converge to a final task
+- **Global Registration**: Each generated DAG is registered in the global namespace
+
+### Additional Files
+
+- **`tutorial_example.py`**: Contains a commented-out weekday branching example DAG for reference
+
+## Troubleshooting
 
 If you encounter issues:
 
@@ -128,5 +157,10 @@ If you encounter issues:
    ```bash
    docker-compose logs airflow-webserver
    docker-compose logs airflow-scheduler
+   ```
+
+4. **View DAG parsing errors:**
+   ```bash
+   docker-compose logs airflow-scheduler | grep -i error
    ```
 

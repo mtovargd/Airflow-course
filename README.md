@@ -9,7 +9,8 @@ This project contains an Apache Airflow setup using Docker Compose to run your D
 ├── docker-compose.yml         # Docker Compose configuration
 ├── .env                      # Environment variables
 ├── dags/                     # Directory for DAG files
-│   └── jobs_dag.py          # Single DAG with branching logic and mixed operators
+│   ├── jobs_dag.py          # Main DAG with branching logic and mixed operators
+│   └── trigger_dag.py       # Controller DAG with FileSensor and DAG triggering
 ├── logs/                     # Airflow logs
 ├── plugins/                  # Custom plugins
 └── config/                   # Configuration files
@@ -41,9 +42,11 @@ This project contains an Apache Airflow setup using Docker Compose to run your D
      - Username: `admin`
      - Password: `admin`
 
-4. **View your DAG:**
-   - Once logged in, you should see your single DAG: `dag_1`
-   - Click on the DAG to view its structure and run it
+4. **View your DAGs:**
+   - Once logged in, you should see two DAGs:
+     - `dag_1`: The main data processing pipeline
+     - `dag_controller_and_file_trigger`: The controller DAG that triggers the main DAG via file sensing
+   - Click on either DAG to view its structure and run it
 
 ### Managing the Setup
 
@@ -134,6 +137,97 @@ check_table_exists
 - **Sequential and Parallel Flow**: Shows both linear task progression and parallel branching
 - **Shell Integration**: Includes system command execution with BashOperator
 
+## Controller DAG Implementation
+
+The `dags/trigger_dag.py` file contains a controller DAG (`dag_controller_and_file_trigger`) that demonstrates advanced Airflow concepts including:
+- File-based triggering with FileSensor
+- Cross-DAG communication with TriggerDagRunOperator
+- Event-driven pipeline orchestration
+- Automated cleanup operations
+
+### Controller DAG Details
+
+The controller DAG `dag_controller_and_file_trigger` includes:
+- **Start Date**: 2023-01-01
+- **Schedule**: Manual trigger only (`schedule_interval=None`)
+- **Catchup**: Disabled
+- **Tags**: `['controller-dag', 'sensor-example']` for better UI organization
+- **Key Operators**: FileSensor, TriggerDagRunOperator, BashOperator
+
+### Controller DAG Structure
+
+The controller DAG follows this execution pattern:
+
+1. **`wait_for_trigger_file`**: FileSensor that monitors for a trigger file
+   - **File Path**: `/opt/airflow/trigger_files/run`
+   - **Connection**: `fs_default` (local filesystem)
+   - **Poke Interval**: 10 seconds (how often it checks for the file)
+   - **Behavior**: Continuously polls until the trigger file appears
+   
+2. **`trigger_target_dag`**: TriggerDagRunOperator that launches the main pipeline
+   - **Target DAG**: `dag_1` (the main data processing pipeline)
+   - **Wait for Completion**: `True` (waits for the triggered DAG to finish)
+   - **Poke Interval**: 20 seconds (how often it checks the triggered DAG's status)
+   - **Behavior**: Triggers `dag_1` and monitors its execution until completion
+   
+3. **`remove_trigger_file`**: BashOperator that cleans up the trigger file
+   - **Command**: `rm -f /opt/airflow/trigger_files/run`
+   - **Behavior**: Removes the trigger file to prepare for the next run
+   - **Flag**: Uses `-f` to prevent errors if the file is already gone
+
+### Controller Task Flow Diagram
+
+```
+wait_for_trigger_file
+        │
+        ▼ (file detected)
+trigger_target_dag
+        │
+        ▼ (dag_1 completed)
+remove_trigger_file
+```
+
+### Key Controller Features
+
+- **File-Based Triggering**: Uses FileSensor to create event-driven workflows
+- **Cross-DAG Orchestration**: Demonstrates how one DAG can control another
+- **Synchronous Execution**: Waits for the triggered DAG to complete before proceeding
+- **Automatic Cleanup**: Removes trigger files to enable reusable workflows
+- **Error Handling**: Uses safe file removal to prevent pipeline failures
+
+### Using the Controller DAG
+
+To trigger the data processing pipeline via the controller DAG:
+
+1. **Create the trigger directory** (if it doesn't exist):
+   ```bash
+   docker-compose exec airflow-webserver mkdir -p /opt/airflow/trigger_files
+   ```
+2. **Unpause and trigger the dag_controller_and_file_trigger** 
+   First task turns green, it's waiting for the trigger file
+
+3. **Create the trigger file** to start the pipeline:
+   ```bash
+   docker-compose exec airflow-webserver touch /opt/airflow/trigger_files/run
+   ```
+
+4. **Monitor the controller DAG** in the Airflow UI:
+   - The `wait_for_trigger_file` task will detect the file
+   - The `trigger_target_dag` task will launch `dag_1` and wait for completion
+   - The `remove_trigger_file` task will clean up the trigger file
+
+5. **Check the triggered DAG**:
+   - Navigate to `dag_1` in the UI to see the triggered run
+   - Both DAGs will show their execution status and logs
+
+### Multi-DAG Architecture Benefits
+
+- **Separation of Concerns**: Controller logic is separate from business logic
+- **Reusability**: The same controller pattern can trigger multiple different DAGs
+- **Event-Driven**: Enables external systems to trigger Airflow pipelines
+- **Monitoring**: Clear visibility into both trigger events and pipeline execution
+- **Flexibility**: Easy to modify trigger conditions without changing the main pipeline
+
 ## Troubleshooting
 
 If you encounter issues:
@@ -157,5 +251,37 @@ If you encounter issues:
 4. **View DAG parsing errors:**
    ```bash
    docker-compose logs airflow-scheduler | grep -i error
+   ```
+
+### Controller DAG Specific Issues
+
+5. **FileSensor not detecting files:**
+   ```bash
+   # Check if the trigger directory exists
+   docker-compose exec airflow-webserver ls -la /opt/airflow/trigger_files/
+   
+   # Create the directory if it doesn't exist
+   docker-compose exec airflow-webserver mkdir -p /opt/airflow/trigger_files
+   ```
+
+6. **Check FileSensor task logs:**
+   ```bash
+   # View FileSensor specific logs
+   docker-compose logs airflow-scheduler | grep -i "wait_for_trigger_file"
+   ```
+
+7. **Verify trigger file creation:**
+   ```bash
+   # Create trigger file manually for testing
+   docker-compose exec airflow-webserver touch /opt/airflow/trigger_files/run
+   
+   # Verify the file exists
+   docker-compose exec airflow-webserver ls -la /opt/airflow/trigger_files/run
+   ```
+
+8. **Monitor cross-DAG triggering:**
+   ```bash
+   # Check TriggerDagRunOperator logs
+   docker-compose logs airflow-scheduler | grep -i "trigger_target_dag"
    ```
 

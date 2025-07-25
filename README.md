@@ -13,6 +13,7 @@ This project contains an Apache Airflow setup using Docker Compose to run your D
 │   └── trigger_dag.py       # Controller DAG with FileSensor and DAG triggering
 ├── logs/                     # Airflow logs
 ├── plugins/                  # Custom plugins
+├── trigger_files/           # The trigger file and finish file appears here
 └── config/                   # Configuration files
 ```
 
@@ -152,7 +153,7 @@ The controller DAG `dag_controller_and_file_trigger` includes:
 - **Schedule**: Manual trigger only (`schedule_interval=None`)
 - **Catchup**: Disabled
 - **Tags**: `['controller-dag', 'sensor-example']` for better UI organization
-- **Key Operators**: FileSensor, TriggerDagRunOperator, BashOperator
+- **Key Operators**: FileSensor, TriggerDagRunOperator, BashOperator, ExternalTaskSensor
 
 ### Controller DAG Structure
 
@@ -211,14 +212,15 @@ To trigger the data processing pipeline via the controller DAG:
    docker-compose exec airflow-webserver touch /opt/airflow/trigger_files/run
    ```
 
-4. **Monitor the controller DAG** in the Airflow UI:
-   - The `wait_for_trigger_file` task will detect the file
-   - The `trigger_target_dag` task will launch `dag_1` and wait for completion
-   - The `remove_trigger_file` task will clean up the trigger file
+4. **Trigger the controller DAG** in the Airflow UI:
+   - Unpause both DAGs
+   - Trigger dag_controller
+   - Monitor tasks
 
 5. **Check the triggered DAG**:
    - Navigate to `dag_1` in the UI to see the triggered run
-   - Both DAGs will show their execution status and logs
+   - When it finishes, the dag_controller will continue
+   - When dag_controller finishes, it remove the run file and place a finish file instead
 
 ### Multi-DAG Architecture Benefits
 

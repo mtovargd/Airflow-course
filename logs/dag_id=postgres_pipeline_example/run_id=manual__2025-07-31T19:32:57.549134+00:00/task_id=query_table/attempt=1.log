@@ -1,0 +1,17 @@
+[2025-07-31T19:33:03.716+0000] {taskinstance.py:1157} INFO - Dependencies all met for dep_context=non-requeueable deps ti=<TaskInstance: postgres_pipeline_example.query_table manual__2025-07-31T19:32:57.549134+00:00 [queued]>
+[2025-07-31T19:33:03.724+0000] {taskinstance.py:1157} INFO - Dependencies all met for dep_context=requeueable deps ti=<TaskInstance: postgres_pipeline_example.query_table manual__2025-07-31T19:32:57.549134+00:00 [queued]>
+[2025-07-31T19:33:03.725+0000] {taskinstance.py:1359} INFO - Starting attempt 1 of 1
+[2025-07-31T19:33:03.737+0000] {taskinstance.py:1380} INFO - Executing <Task(PythonOperator): query_table> on 2025-07-31 19:32:57.549134+00:00
+[2025-07-31T19:33:03.740+0000] {standard_task_runner.py:57} INFO - Started process 852 to run task
+[2025-07-31T19:33:03.743+0000] {standard_task_runner.py:84} INFO - Running: ['***', 'tasks', 'run', 'postgres_pipeline_example', 'query_table', 'manual__2025-07-31T19:32:57.549134+00:00', '--job-id', '248', '--raw', '--subdir', 'DAGS_FOLDER/jobs_dag.py', '--cfg-path', '/tmp/tmp48hi4ho2']
+[2025-07-31T19:33:03.746+0000] {standard_task_runner.py:85} INFO - Job 248: Subtask query_table
+[2025-07-31T19:33:03.795+0000] {task_command.py:415} INFO - Running <TaskInstance: postgres_pipeline_example.query_table manual__2025-07-31T19:32:57.549134+00:00 [running]> on host 39aa5c3cd22d
+[2025-07-31T19:33:03.875+0000] {taskinstance.py:1660} INFO - Exporting env vars: AIRFLOW_CTX_DAG_OWNER='***' AIRFLOW_CTX_DAG_ID='postgres_pipeline_example' AIRFLOW_CTX_TASK_ID='query_table' AIRFLOW_CTX_EXECUTION_DATE='2025-07-31T19:32:57.549134+00:00' AIRFLOW_CTX_TRY_NUMBER='1' AIRFLOW_CTX_DAG_RUN_ID='manual__2025-07-31T19:32:57.549134+00:00'
+[2025-07-31T19:33:03.887+0000] {base.py:73} INFO - Using connection ID 'postgres_default' for task execution.
+[2025-07-31T19:33:03.891+0000] {sql.py:418} INFO - Running statement: SELECT COUNT(*) FROM user_processing_data;, parameters: None
+[2025-07-31T19:33:03.893+0000] {sql.py:427} INFO - Rows affected: 1
+[2025-07-31T19:33:03.894+0000] {logging_mixin.py:151} INFO - Table 'user_processing_data' has 0 rows.
+[2025-07-31T19:33:03.894+0000] {python.py:194} INFO - Done. Returned value was: 0
+[2025-07-31T19:33:03.918+0000] {taskinstance.py:1398} INFO - Marking task as SUCCESS. dag_id=postgres_pipeline_example, task_id=query_table, execution_date=20250731T193257, start_date=20250731T193303, end_date=20250731T193303
+[2025-07-31T19:33:03.965+0000] {local_task_job_runner.py:228} INFO - Task exited with return code 0
+[2025-07-31T19:33:03.987+0000] {taskinstance.py:2776} INFO - 0 downstream tasks scheduled from follow-on schedule check

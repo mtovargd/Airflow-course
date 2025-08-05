@@ -5,40 +5,40 @@ from datetime import datetime
 
 from airflow.models.dag import DAG
 from airflow.operators.bash import BashOperator
-from airflow.operators.python import BranchPythonOperator, PythonOperator
+from airflow.operators.python import BranchPythonOperator
 from airflow.providers.postgres.hooks.postgres import PostgresHook
 from airflow.providers.postgres.operators.postgres import PostgresOperator
 from airflow.utils.trigger_rule import TriggerRule
 
+# Import our custom operator from the plugins/operators directory
+from operators.postgres_count_rows_operator import PostgreSQLCountRowsOperator
+
+# --- Constants ---
 POSTGRES_CONN_ID = "postgres_default"
 TABLE_NAME = "user_processing_data"
 
-
+# --- Callable Functions ---
 def check_if_table_exists_callable(table_name: str) -> str:
+    """
+    Checks if the target table exists and returns the next task_id.
+    This logic remains in a callable because it's for a BranchPythonOperator.
+    """
     pg_hook = PostgresHook(postgres_conn_id=POSTGRES_CONN_ID)
     sql = "SELECT 1 FROM information_schema.tables WHERE table_name = %s"
     result = pg_hook.get_first(sql, parameters=[table_name])
-    print(f"Table check for '{table_name}' returned: {result}")
     if result:
         return "insert_row"
     return "create_table"
 
+# The query_table_callable function has been REMOVED. Its logic is now in the custom operator.
 
-def query_table_callable(table_name: str) -> int:
-    pg_hook = PostgresHook(postgres_conn_id=POSTGRES_CONN_ID)
-    sql = f"SELECT COUNT(*) FROM {table_name};"
-    result = pg_hook.get_first(sql)
-    count = result[0] if result else 0
-    print(f"Table '{table_name}' has {count} rows.")
-    return count
-
-
+# --- DAG Definition ---
 with DAG(
     dag_id="postgres_pipeline_example",
     start_date=datetime(2023, 1, 1),
     schedule_interval=None,
     catchup=False,
-    tags=["postgres_example", "xcom_example"],
+    tags=["postgres_example", "custom_operator"],
 ) as dag:
 
     get_current_user = BashOperator(
@@ -55,13 +55,7 @@ with DAG(
     create_table = PostgresOperator(
         task_id="create_table",
         postgres_conn_id=POSTGRES_CONN_ID,
-        sql="""
-            CREATE TABLE IF NOT EXISTS {{ params.table_name }} (
-                custom_id INTEGER NOT NULL,
-                user_name VARCHAR(50) NOT NULL,
-                timestamp TIMESTAMP NOT NULL
-            );
-        """,
+        sql="sql/create_user_processing_table.sql", # Example of using an external SQL file
         params={"table_name": TABLE_NAME},
     )
 
@@ -72,9 +66,7 @@ with DAG(
             INSERT INTO {{ params.table_name }} (custom_id, user_name, timestamp)
             VALUES (%(custom_id)s, %(user_name)s, %(timestamp)s);
         """,
-
         params={"table_name": TABLE_NAME},
-        # The 'parameters' dictionary is for the database driver.
         parameters={
             "custom_id": random.randint(1, 100000),
             "user_name": "{{ ti.xcom_pull(task_ids='get_current_user') }}",
@@ -82,13 +74,15 @@ with DAG(
         },
     )
 
-    query_table = PythonOperator(
+    # This task now uses our clean, reusable custom operator
+    query_table = PostgreSQLCountRowsOperator(
         task_id="query_table",
-        python_callable=query_table_callable,
-        op_kwargs={"table_name": TABLE_NAME},
+        table_name=TABLE_NAME,
+        postgres_conn_id=POSTGRES_CONN_ID,
         trigger_rule=TriggerRule.NONE_FAILED,
     )
 
+    # --- Task Dependencies ---
     get_current_user >> check_table_exists
     check_table_exists >> [create_table, insert_row]
     [create_table, insert_row] >> query_table

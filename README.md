@@ -12,7 +12,7 @@ This project contains an Apache Airflow setup using Docker Compose to run your D
 │   ├── jobs_dag.py          # Main Postgres data pipeline
 │   └── trigger_dag.py       # Controller DAG with FileSensor and DAG triggering
 ├── logs/                     # Airflow logs
-├── plugins/                  # Custom plugins
+├── plugins/                  # Custom plugins (including custom operators)
 ├── trigger_files/           # The trigger file appears here for the controller DAG
 └── config/                   # Configuration files```
 ```
@@ -83,9 +83,10 @@ docker-compose logs -f
 
 ## DAG Architecture
 
+
 ### Postgres Pipeline DAG (`postgres_pipeline_example`)
 
-The `dags/jobs_dag.py` file contains the primary data pipeline (`postgres_pipeline_example`). This DAG demonstrates a full ETL (Extract, Transform, Load) pattern by connecting to a PostgreSQL database, creating a table if it doesn't exist, inserting new data, and querying the result.
+The `dags/jobs_dag.py` file contains the primary data pipeline (`postgres_pipeline_example`). This DAG demonstrates a full ETL (Extract, Transform, Load) pattern by connecting to a PostgreSQL database, creating a table if it doesn't exist, inserting new data, and querying the result. It now uses a **custom operator** for counting rows in the table.
 
 #### DAG Details
 
@@ -93,9 +94,9 @@ The `postgres_pipeline_example` DAG includes:
 - **Start Date**: 2023-01-01
 - **Schedule**: Manual trigger only (`schedule_interval=None`)
 - **Catchup**: Disabled
-- **Key Operators**: `PostgresOperator`, `PythonOperator`, `BashOperator`, `BranchPythonOperator`
+- **Key Operators**: `PostgresOperator`, `BashOperator`, `BranchPythonOperator`, `PostgreSQLCountRowsOperator` (custom)
 - **Key Hooks**: `PostgresHook` for custom Python-to-Postgres interaction.
-- **Key Features**: XComs for inter-task communication, dynamic branching, idempotent design.
+- **Key Features**: XComs for inter-task communication, dynamic branching, idempotent design, and a reusable custom operator for row counting.
 
 #### DAG Structure with Real Database Logic
 
@@ -109,7 +110,7 @@ The DAG follows this robust, idempotent execution pattern:
     -   **`create_table`**: A `PostgresOperator` that runs a `CREATE TABLE` script. This path is only taken if the table does not exist.
     -   **`insert_row`**: A `PostgresOperator` that runs an `INSERT` script. It pulls the username from XComs (`get_current_user` task), generates a random ID, and adds the current timestamp.
 
-4.  **`query_table`**: A `PythonOperator` that uses `PostgresHook` to run a `SELECT COUNT(*)` query on the table. It **pushes the row count to XComs** and ensures it runs after either branch by using `TriggerRule.NONE_FAILED`.
+4.  **`query_table`**: A **custom operator** (`PostgreSQLCountRowsOperator`) that runs a `SELECT COUNT(*)` query on the table and pushes the row count to XComs. It ensures it runs after either branch by using `TriggerRule.NONE_FAILED`.
 
 #### Task Flow Diagram
 
@@ -124,7 +125,7 @@ check_table_exists
         └─── insert_row (PostgresOperator) ─────┤
              (pulls from XCom)                  │
                                                 ▼
-                                          query_table (PythonOperator)
+                                  query_table (PostgreSQLCountRowsOperator)
                                        (pushes row count to XCom)
                                           (NONE_FAILED)
 ```
@@ -132,14 +133,15 @@ check_table_exists
 #### Key Features
 
 - **Database Integration**: Demonstrates creating tables and inserting data with `PostgresOperator`.
-- **Custom DB Logic**: Uses `PostgresHook` within a `PythonOperator` for more complex database interactions like checking existence and querying results.
+- **Custom DB Logic**: Uses `PostgresHook` within a `BranchPythonOperator` for checking table existence, and a **custom operator** for querying results.
 - **XComs for Data Sharing**: Pushes data from a `BashOperator` and a `PythonOperator`, and pulls that data into a `PostgresOperator` for use in a query.
 - **Idempotent Design**: The "check-then-act" pattern ensures the DAG can be run repeatedly without errors.
 - **Dynamic SQL with Parameters**: Safely injects parameters into SQL queries to prevent injection attacks.
 
+
 ## Controller DAG Implementation
 
-The `dags/trigger_dag.py` file contains a controller DAG (`dag_controller_and_file_trigger`) that demonstrates file-based, event-driven orchestration.
+The `dags/trigger_dag.py` file contains a controller DAG (`dag_controller_and_file_trigger`) that demonstrates file-based, event-driven orchestration. **Note:** The controller DAG's target DAG id is set by the `TARGET_DAG_ID` variable in the code (default: `'dag_1'`). Update this to match your main pipeline DAG id if needed (e.g., `'postgres_pipeline_example'`).
 
 ### Controller DAG Details
 
@@ -163,8 +165,16 @@ To trigger the data processing pipeline via the controller DAG:
     docker exec airflow-scheduler touch /opt/airflow/trigger_files/run
     ```
 4.  **Monitor the pipeline**:
-    - The sensor will succeed and trigger a new run of `postgres_pipeline_example`.
-    - When that DAG run completes, the controller will proceed to its final step, removing the `run` file.
+    - The sensor will succeed and trigger a new run of the target DAG (see `TARGET_DAG_ID` in `trigger_dag.py`).
+    - When that DAG run completes, the controller will proceed to its final step, removing the `run` file and creating a `finished_*.txt` file.
+## Custom Operator: PostgreSQLCountRowsOperator
+
+This project includes a custom Airflow operator: `PostgreSQLCountRowsOperator` (see `plugins/operators/postgres_count_rows_operator.py`).
+
+- **Purpose:** Counts the number of rows in a specified PostgreSQL table and pushes the result to XComs.
+- **Usage:** Used as the `query_table` task in the main pipeline DAG.
+- **Benefits:** Clean, reusable, and demonstrates how to extend Airflow with custom operators.
+
 
 ## Troubleshooting
 

@@ -30,8 +30,6 @@ def check_if_table_exists_callable(table_name: str) -> str:
         return "insert_row"
     return "create_table"
 
-# The query_table_callable function has been REMOVED. Its logic is now in the custom operator.
-
 # --- DAG Definition ---
 with DAG(
     dag_id="postgres_pipeline_example",
@@ -55,18 +53,22 @@ with DAG(
     create_table = PostgresOperator(
         task_id="create_table",
         postgres_conn_id=POSTGRES_CONN_ID,
-        sql="sql/create_user_processing_table.sql", # Example of using an external SQL file
-        params={"table_name": TABLE_NAME},
+        sql=f"""
+            CREATE TABLE IF NOT EXISTS {TABLE_NAME} (
+                custom_id INTEGER PRIMARY KEY,
+                user_name TEXT,
+                timestamp TIMESTAMP
+            );
+        """,
     )
 
     insert_row = PostgresOperator(
         task_id="insert_row",
         postgres_conn_id=POSTGRES_CONN_ID,
-        sql="""
-            INSERT INTO {{ params.table_name }} (custom_id, user_name, timestamp)
+        sql=f"""
+            INSERT INTO {TABLE_NAME} (custom_id, user_name, timestamp)
             VALUES (%(custom_id)s, %(user_name)s, %(timestamp)s);
         """,
-        params={"table_name": TABLE_NAME},
         parameters={
             "custom_id": random.randint(1, 100000),
             "user_name": "{{ ti.xcom_pull(task_ids='get_current_user') }}",
